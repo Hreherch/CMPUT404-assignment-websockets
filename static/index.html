@@ -27,7 +27,7 @@
     <canvas id="c" width="100%" height="100%" style="-webkit-tap-highlight-color: transparent;"></canvas> 
 
     <script>
-      // Fix me
+// Fix me
 var canvas = document.getElementById('c');
 var host = window.location.host;
 var context = canvas.getContext("2d");
@@ -35,12 +35,15 @@ var W = canvas.width  = window.innerWidth-6;
 var H = canvas.height = window.innerHeight-50;
 var wscounter = 0;
 var socket;
+var START_CSIZE = 25;
+var cSize = START_CSIZE;
+var cColor = [135,206,250] // rgb values
 
 function debug(str) {
     var debugDiv = document.getElementById('debug');
     debugDiv.innerHTML = "" + str;
 }
-debug("Test");
+//debug("Test");
 
 world = {};
 
@@ -125,6 +128,7 @@ function addEntity(entity, data) {
     world[entity] = data;
     drawNextFrame(); // (but should we?)
     //XXX: Send a XHTML Request that updates the entity you just modified!
+    socket.send(JSON.stringify({[entity]: world[entity]}));
 }
 var counter = 0;
 function addEntityWithoutName(data) {
@@ -228,19 +232,77 @@ mouse = (function() {
     return self;
 })();
 
+var timesUnder = 0;
+var timesOver = 0;
+var getCSize = () => {
+    var s = cSize;
+    var drift = Math.random()*5;
+    if (Math.random() < .5) { drift = -drift; }
+    cSize += drift;
+    if (cSize < 0) {
+        timesUnder++;
+        cSize = 1;
+    } else if (cSize < START_CSIZE-15) {
+        timesUnder++;
+        cSize += Math.random() * timesUnder;
+    } else if (cSize > START_CSIZE+15) {
+        timesOver++;
+        cSize -= Math.random() * timesOver;
+    } else {
+        timesUnder = 0;
+        timesOver = 0;
+    }
+    return s;
+}
+
+var getRandNeg = () => Math.random() < .5 ? 1 : -1;
+var cTrend = [0, 0, 0];
+var getRGB = () => {
+    for(let i = 0; i < 3; i++) {
+        cTrend[i] += Math.random() * getRandNeg();
+        cColor[i] += cTrend[i];
+    }
+
+    cColor.forEach((v, i) => {
+        if (v <= 20) {
+            cColor[i] = 30;
+            cTrend[i] = 3;
+        } else if (v > 255) {
+            cColor[i] = 245;
+            cTrend[i] = -3;
+        }
+    })
+
+    return `rgb(${cColor[0]},${cColor[1]},${cColor[2]})`
+}
+
 // Add the application specific mouse listeners!
 //XXX: TODO Make these prettier!
 mouse.mousedowners.push(function(x,y,clicked,e) {
-    addEntityWithoutName({'x':x,'y':y,'colour':'blue'});
+    addEntityWithoutName({
+        'x':x,
+        'y':y,
+        'colour': getRGB(),
+        'radius': getCSize()
+    });
 });
 
 mouse.mouseuppers.push(function(x,y,clicked,e) {
-    addEntityWithoutName({'x':x,'y':y,'colour':'red'});
+    addEntityWithoutName({
+        'x':x,
+        'y':y,
+        'colour': getRGB(),
+        'radius': getCSize()
+    });
 });
 
 mouse.mousedraggers.push(function(x,y,clicked,e) {
-    addEntityWithoutName({'x':x,'y':y,'colour':'green',
-                          'radius':10});
+    addEntityWithoutName({
+        'x':x,
+        'y':y,
+        'colour': getRGB(),
+        'radius': getCSize()
+    });
 });
 
 
@@ -249,19 +311,24 @@ function update() {
 }
 
 
-function wsSetup() {
+var wsSetup = () => {
     var url = "ws://"+host+"/subscribe";   
     socket = new WebSocket(url);
-    socket.onopen = function() {
+    socket.onopen = function(e) {
         //XXX: TODO What are you going to do here?
     };
     socket.onerror = function(msg) {
         debug("WebSocket Error:" + msg.data);
     };
-    socket.onmessage = function(msg) {  
+    socket.onmessage = (msg) => {  
         try {
-            debug("WebSocket Recv:" + msg.data);
-            //XXX: TODO What are you going to do here?            
+            //debug("WebSocket Recv:" + msg.data);
+            //XXX: TODO What are you going to do here?
+            data = JSON.parse(msg.data)
+            Object.keys(data).forEach((key) => {
+                world[key] = data[key]
+            });
+            drawNextFrame();
         } catch (e) {
             alert("socket on message: " + e);
         }
